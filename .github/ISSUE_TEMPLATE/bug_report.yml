@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in Sunlight doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead. A screen recording helps a lot.
+    validations:
+      required: true
+  - type: dropdown
+    id: renderer
+    attributes:
+      label: Mode
+      options:
+        - Live windows
+        - Preview (pictures of windows)
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Sunlight and macOS versions
+      placeholder: Sunlight 0.1, macOS 27.2
+    validations:
+      required: true
+  - type: textarea
+    id: diagnose
+    attributes:
+      label: Diagnose report
+      description: Settings › Live Windows › Diagnose… copies it to the clipboard. It has no window titles or pictures.
+      render: text

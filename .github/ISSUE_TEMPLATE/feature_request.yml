@@ -1,0 +1,11 @@
+name: Idea
+description: Something Sunlight could do
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: The idea
+      description: What you'd like to do, and what gets in the way today.
+    validations:
+      required: true
