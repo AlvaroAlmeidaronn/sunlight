@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- The first-launch tutorial (trackpad) shows going into a window as a click or pinching in, side by side with an "or" between them, and ends with panning from anywhere with four fingers. Instructions > The Basics lists the four-finger pan too.
+- Apps whose window never shows on the canvas (a panel, an overlay, a tiny or invisible window) now stay in front when you switch to them from the canvas, instead of being sent back behind it.
+
 ## 0.1.1
 
 - Quick ⌘Tab switches no longer flash the window you just left at full size (Dock add-on sunlight-14).

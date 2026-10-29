@@ -181,6 +181,10 @@ final class CanvasController {
     static let launchWait: TimeInterval = 8
     /// Once arrived: after this, a Dock click on it enters it, as for any app on the canvas.
     static let launchSettle: TimeInterval = 1.5
+    /// Apps whose launch showed no canvas window in `launchWait` (a panel, an overlay, a window under
+    /// 120×80, nothing at all): from the canvas they're let to the front like any app, not held behind
+    /// the canvas again, which took them back every time they were activated.
+    private var windowlessApps: Set<pid_t> = []
     private var pendingFitAll = false
     /// A placement key pressed inside a real window (⌃⌥A, ⌃⌥3): done once the canvas is up and synced.
     private var pendingPlacement: (() -> Void)?
@@ -4511,7 +4515,11 @@ final class CanvasController {
                 launches[pid] = l
                 NSLog("Launch: \(l.name) is on the canvas")
             }
-            if now >= l.deadline || l.arrived.map({ now >= $0.addingTimeInterval(CanvasController.launchSettle) }) == true {
+            if l.arrived == nil, now >= l.deadline {
+                NSLog("Launch: \(l.name) showed no window for the canvas in \(Int(CanvasController.launchWait)) s — no longer held behind it")
+                windowlessApps.insert(pid)
+                launches[pid] = nil
+            } else if now >= l.deadline || l.arrived.map({ now >= $0.addingTimeInterval(CanvasController.launchSettle) }) == true {
                 launches[pid] = nil
             }
         }
@@ -4606,11 +4614,26 @@ final class CanvasController {
             return
         }
         let known = focused?.windowID.flatMap { proxyReturning($0) }
-        if onCanvas, known == nil, focused?.isFullScreen != true {
+        if onCanvas, known == nil, focused?.isFullScreen != true, mayHoldBehindCanvas(pid: pid, focused: focused) {
             keepOnCanvas(app)
             return
         }
         if let focused { absorb(window: focused) } else { waitForWindow(of: pid) }
+    }
+
+    /// Whether an app activated from the canvas, with no window the canvas knows, is a launch to keep
+    /// behind it. Not when its focused window is on screen and could never be on the canvas (a panel, an
+    /// overlay, an invisible or tiny window), nor when an earlier launch of it never showed one: holding
+    /// it there would only take it back from the user every time, as no window ever arrives to end it.
+    private func mayHoldBehindCanvas(pid: pid_t, focused: AXWindow?) -> Bool {
+        if windowlessApps.contains(pid) {
+            guard proxies.values.contains(where: { $0.pid == pid && $0.kind == .window }) else { return false }
+            windowlessApps.remove(pid)   // it has a canvas window after all: an app like any other
+        }
+        guard let id = focused?.windowID, let w = WindowList.onScreen().first(where: { $0.id == id }) else { return true }
+        if isCanvasMaterial(w) || isWidget(w) { return true }
+        NSLog("Launch: pid \(pid)'s window \(id) isn't one for the canvas — leaving it in front")
+        return false
     }
 
     /// The app is in front but has nothing we can show yet; absorb it as soon as it opens a window.

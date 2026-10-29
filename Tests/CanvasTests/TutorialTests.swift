@@ -2,11 +2,12 @@ import XCTest
 @testable import Canvas
 
 final class TutorialTests: XCTestCase {
-    func testFiveOrSixStepsForEachInput() {
+    func testAHandfulOfStepsForEachInput() {
         for input in Tutorial.Input.allCases {
             let steps = input.steps
-            XCTAssertTrue((5...6).contains(steps.count), "\(input)")
-            XCTAssertEqual(Set(steps.map(\.gesture)).count, steps.count, "\(input): no loop twice")
+            XCTAssertTrue((5...7).contains(steps.count), "\(input)")
+            let loops = steps.map(\.gesture) + steps.compactMap(\.also)
+            XCTAssertEqual(Set(loops).count, loops.count, "\(input): no loop twice")
             XCTAssertEqual(Set(steps.map(\.title)).count, steps.count, "\(input)")
             for step in steps {
                 XCTAssertFalse(step.line.isEmpty, step.title)
@@ -29,9 +30,9 @@ final class TutorialTests: XCTestCase {
     }
 
     /// Both teach the same moves in the same order: see everything first, then the click that goes into a
-    /// window, before moving one.
+    /// window, before moving one. The mouse only lacks the four-finger pan.
     func testBothTeachTheSameMovesClickBeforeDrag() {
-        XCTAssertEqual(Tutorial.trackpad.map(\.title), Tutorial.mouse.map(\.title))
+        XCTAssertEqual(Tutorial.trackpad.filter { $0.gesture != .fourFingerDrag }.map(\.title), Tutorial.mouse.map(\.title))
         for input in Tutorial.Input.allCases {
             let gestures = input.steps.map(\.gesture)
             XCTAssertEqual(gestures.first, .fourFingerTap, "\(input)")
@@ -53,5 +54,16 @@ final class TutorialTests: XCTestCase {
             XCTAssertFalse(Tutorial.isLast(0, for: input))
             XCTAssertTrue(Tutorial.isLast(input.steps.count - 1, for: input))
         }
+    }
+
+    /// Going into a window: a click or pinching in, side by side. Four-finger drag comes near the end.
+    func testTwoWaysSideBySideAndFourFingerPanNearTheEnd() {
+        let click = Tutorial.trackpad.first { $0.gesture == .click }
+        XCTAssertEqual(click?.also, .pinchIn)
+        XCTAssertTrue(Tutorial.mouse.allSatisfy { $0.also == nil }, "a mouse can't pinch")
+        let pan = Tutorial.trackpad.firstIndex { $0.gesture == .fourFingerDrag }
+        XCTAssertNotNil(pan)
+        if let pan { XCTAssertGreaterThanOrEqual(pan, Tutorial.trackpad.count - 2) }
+        XCTAssertFalse(Tutorial.mouse.contains { $0.gesture == .fourFingerDrag })
     }
 }

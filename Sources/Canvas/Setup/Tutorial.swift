@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The basics, as a short tutorial: six moves, one to a step, each acted out by the same loop Settings ›
+/// The basics, as a short tutorial: a handful of moves, one to a step, each acted out by the same loop Settings ›
 /// Trackpad and the Instructions play (`GestureGuide`): a miniature canvas beside the hand doing it. It
 /// asks first whether you use a trackpad or a mouse, and shows the moves for that one: fingertips on a
 /// trackpad, or a mouse and the keys. It's a page of Set Up Sunlight (`SetupFlow.Page.basics`), shown
@@ -8,8 +8,9 @@ import SwiftUI
 /// plays it again.
 ///
 /// A trackpad step names its gesture and takes the hand's words from it (`GestureGuide.Gesture.how`),
-/// so when a gesture changes there, the tutorial follows. A mouse step plays the same canvas loop with a
-/// mouse cue of its own.
+/// so when a gesture changes there, the tutorial follows. Where two gestures do the same thing (a click
+/// and pinching in, for going into a window), the step plays both side by side with "or" between them.
+/// A mouse step plays the same canvas loop with a mouse cue of its own.
 enum Tutorial {
     enum Input: String, CaseIterable, Identifiable {
         case trackpad, mouse
@@ -43,6 +44,8 @@ enum Tutorial {
         var mouse: MouseCue?
         /// The other way to do it, after "or", if there is one.
         var keys: String?
+        /// Another gesture that does the same, played beside the first with an "or" between them.
+        var also: GestureGuide.Gesture?
 
         /// What the hand does: the words under the picture.
         var how: String { mouse?.how ?? gesture.how }
@@ -62,22 +65,26 @@ enum Tutorial {
              line: "Every window sits on one big canvas. From anywhere, even inside a window, one move brings all of it into view.",
              gesture: .fourFingerTap, keys: "the Mission Control key"),
         Step(title: "Pan around.",
-             line: "The canvas goes on in every direction. Four fingers pan it from inside a window too.",
+             line: "The canvas goes on in every direction. Slide two fingers over it to move about.",
              gesture: .scroll, keys: "drag the empty canvas"),
         Step(title: "Zoom in and out.",
              line: "From the whole canvas down to a single window, about the spot between your fingers.",
              gesture: .pinch, keys: "⌥ or ⌘ with a scroll"),
         Step(title: "Go into a window.",
-             line: "One click and it comes to its real size right where it is, ready to use. Pinching all the way in over it works too.",
-             gesture: .click),
+             line: "One click and it comes to its real size right where it is, ready to use. Pinching in over it, all the way, does the same.",
+             gesture: .click, also: .pinchIn),
         Step(title: "Bring it to the middle.",
              line: "Double-click and the window comes to the middle of the screen at its real size, ready to use.",
              gesture: .doubleClick, keys: "⏎ for the window under the pointer"),
         Step(title: "Arrange them your way.",
              line: "Drag a window anywhere on the canvas. Its edges stick to the neighbours', so things line up.",
              gesture: .drag, keys: "⌃⌥ and an arrow for halves, thirds and more"),
+        Step(title: "Pan from anywhere.",
+             line: "Drag four fingers in any direction, even inside a window: the canvas comes back and follows them.",
+             gesture: .fourFingerDrag),
     ]
 
+    /// With a mouse there are no four fingers, so the steps are the trackpad's without that one.
     static let mouse: [Step] = [
         Step(title: "See all your windows.",
              line: "Every window sits on one big canvas. From anywhere, even inside a window, one key brings all of it into view.",
@@ -184,20 +191,27 @@ struct TutorialStage: View {
     private func steps(_ input: Tutorial.Input) -> some View {
         let step = Tutorial.step(index, for: input).resolved(seeAll: Settings.seeAllGesture)
         return VStack(spacing: 18 * s) {
-            GestureStage(gesture: step.gesture, scale: 1.4 * s, mouse: step.mouse)
-                .padding(.horizontal, 30 * s)
-                .padding(.vertical, 24 * s)
-                .background(
-                    RoundedRectangle(cornerRadius: 22 * s, style: .continuous)
-                        .fill(.primary.opacity(0.06))
-                        .overlay(RoundedRectangle(cornerRadius: 22 * s, style: .continuous).strokeBorder(.primary.opacity(0.1), lineWidth: 1))
-                )
+            if let also = step.also {
+                // Two ways to the same thing: both loops, smaller, each with its words, "or" between.
+                HStack(alignment: .top, spacing: 20 * s) {
+                    half(step.gesture, how: step.how)
+                    OrPill(scale: s)
+                        .padding(.top, 78 * s)
+                    half(also, how: also.how)
+                }
                 .id("\(input)-\(index)")
                 .transition(.opacity)
+            } else {
+                card(GestureStage(gesture: step.gesture, scale: 1.4 * s, mouse: step.mouse))
+                    .id("\(input)-\(index)")
+                    .transition(.opacity)
+            }
             VStack(spacing: 6 * s) {
-                Text(step.how)
-                    .font(.system(size: 17 * s, weight: .medium))
-                    .foregroundStyle(.primary.opacity(0.85))
+                if step.also == nil {
+                    Text(step.how)
+                        .font(.system(size: 17 * s, weight: .medium))
+                        .foregroundStyle(.primary.opacity(0.85))
+                }
                 if let keys = step.keys {
                     Text("or  \(keys)")
                         .font(.system(size: 15 * s))
@@ -219,6 +233,47 @@ struct TutorialStage: View {
             .accessibilityLabel("Step \(index + 1) of \(input.steps.count)")
         }
         .transition(.opacity)
+    }
+
+    /// A loop in its rounded card.
+    private func card(_ stage: GestureStage, compact: Bool = false) -> some View {
+        stage
+            .padding(.horizontal, (compact ? 22 : 30) * s)
+            .padding(.vertical, (compact ? 18 : 24) * s)
+            .background(
+                RoundedRectangle(cornerRadius: 22 * s, style: .continuous)
+                    .fill(.primary.opacity(0.06))
+                    .overlay(RoundedRectangle(cornerRadius: 22 * s, style: .continuous).strokeBorder(.primary.opacity(0.1), lineWidth: 1))
+            )
+    }
+
+    /// One side of a step with two ways: its loop and, under it, what the hand does.
+    private func half(_ gesture: GestureGuide.Gesture, how: String) -> some View {
+        VStack(spacing: 14 * s) {
+            card(GestureStage(gesture: gesture, scale: s), compact: true)
+            Text(how)
+                .font(.system(size: 17 * s, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.85))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 420 * s)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// "OR" between two gestures that do the same thing, as the launch email has it: a sun-yellow pill.
+private struct OrPill: View {
+    var scale: CGFloat
+
+    var body: some View {
+        Text("OR")
+            .font(.system(size: 14 * scale, weight: .heavy).italic())
+            .tracking(1 * scale)
+            .foregroundStyle(Color(red: 0.11, green: 0.11, blue: 0.118))
+            .padding(.horizontal, 16 * scale)
+            .padding(.vertical, 5 * scale)
+            .background(Capsule().fill(Color(red: 1, green: 0.79, blue: 0.16)))
+            .accessibilityLabel("or")
     }
 }
 
