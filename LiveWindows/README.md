@@ -148,6 +148,14 @@ under one mutex, so the window server sees one lease's changes at a time; a leas
 the windows it took. Before sunlight-13 only the main display's canvas has live windows, and the others
 show captured pictures.
 
+Since sunlight-14 the windows a handoff or a release puts back in a transaction get their native size
+only after the commit (and after the orders are redone directly), one call each, where they are already
+under the backdrop. A transaction that also changes levels can land a window's level change after its
+order, which puts it at the front of the normal level, over the canvas, for one frame before the redo:
+at native size that was the window just left flashing full-size behind the one being entered, caught
+on a screen recording of quick ⌘Tab taps. At the canvas's transform it shows only where the canvas
+already drew it.
+
 The driver has one pending-frame slot on a serial worker. It replaces stale pending frames, rather
 than queuing an animation history. Connect/send/receive waits are bounded at 250 ms; frames carry an
 acknowledgment. A 0.5-second idle heartbeat keeps the lease alive. Disconnect, malformed input, or

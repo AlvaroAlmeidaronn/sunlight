@@ -1,7 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.1
 
+- Quick ⌘Tab switches no longer flash the window you just left at full size (Dock add-on sunlight-14).
+  Sunlight loads the new add-on by itself the first time it starts after the update, which restarts the
+  Dock once. With live windows allowed in Login Items that needs nothing from you; otherwise Sunlight asks
+  for your administrator password once.
 - A canvas on every display, behind Settings › General › Experimental › Multiple displays (off by
   default). Each window is on the canvas of the display it's on, and goes to another
   display's canvas when moved there, from inside it or with ⌃⌥⇧ → ← (Window › Move to Next Display, or its

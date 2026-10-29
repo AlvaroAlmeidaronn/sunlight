@@ -27,7 +27,10 @@ static int commits;
 CFTypeRef SLSTransactionCreate(int c) { return CFRetain(kCFBooleanTrue); }
 CGError SLSTransactionCommit(CFTypeRef t, int s) { commits++; return 0; }
 CGError SLSTransactionOrderWindow(CFTypeRef t, uint32_t w, int o, uint32_t r) { if (w < 10) orders[w]++; return 0; }
-CGError SLSTransactionSetWindowTransform(CFTypeRef t, uint32_t w, int u, int u2, CGAffineTransform tr) { transforms[w] = tr; mutations[w]++; return 0; }
+// Transforms set inside a transaction, per window: a window put back must not get its native size in
+// one that changes levels too (sunlight-14), where it could land over the canvas for a frame.
+static int txn_transforms[10];
+CGError SLSTransactionSetWindowTransform(CFTypeRef t, uint32_t w, int u, int u2, CGAffineTransform tr) { transforms[w] = tr; mutations[w]++; txn_transforms[w]++; return 0; }
 CGError SLSTransactionSetWindowLevel(CFTypeRef t, uint32_t w, int l) { levels[w] = l; return 0; }
 OSStatus SLSMoveWindowWithGroup(int c, uint32_t w, CGPoint *p) { transforms[w] = CGAffineTransformMakeTranslation(-p->x, -p->y); return 0; }
 CGError SLSGetWindowBounds(int c, uint32_t w, CGRect *f) { *f = CGRectMake(-transforms[w].tx, -transforms[w].ty, 400, 300); return 0; }
@@ -134,8 +137,10 @@ int main(void) {
     send_frame(fd, 4, false);
     assert(transforms[4].a == 2 && levels[4] == SUNBEAM_LEVEL);
     assert(levels[1] == SUNBEAM_LEVEL && levels[2] == SUNBEAM_LEVEL);   // the canvas is lifted with its windows (sunlight-11)
+    int released_in_txn = txn_transforms[4];
     close(fd); pthread_join(thread, NULL);
     assert(CGAffineTransformEqualToTransform(transforms[4], original) && levels[4] == -10);
+    assert(txn_transforms[4] == released_in_txn);   // native size directly, after the commit
     assert(levels[1] == 0 && levels[2] == 0);   // and comes down as they go back
     assert(mutations[5] == 0); // unmanaged window untouched
 
@@ -270,7 +275,7 @@ int main(void) {
     fd = start(&thread);
     send_flagged(fd, three, 3, SUNBEAM_FRAME_FULL, 2);
     assert(levels[5] == SUNBEAM_LEVEL && levels[6] == SUNBEAM_LEVEL);
-    int moves7 = mutations[7];
+    int moves7 = mutations[7], put_back_in_txn = txn_transforms[6];
     {
         char keep[2 + 22 + 3 * 12]; int16_t keep_size = 22 + 3 * 12; uint32_t keep_wid = 4, ov = 2, bd = 1; float kx = 120, ky = 80;
         memcpy(keep, &keep_size, 2); keep[2] = SUNBEAM_HANDOFF;
@@ -285,6 +290,7 @@ int main(void) {
         assert(transforms[4].a == 1 && transforms[4].tx == -120 && transforms[4].ty == -80);
         assert(transforms[5].a == 1 && transforms[5].tx == -300 && transforms[5].ty == -50 && levels[5] == -10);
         assert(transforms[6].a == 1 && transforms[6].tx == -70 && transforms[6].ty == -80 && levels[6] == -10);
+        assert(txn_transforms[6] == put_back_in_txn);   // put back at native size outside the transaction
         assert(mutations[7] == moves7);
         // A count that doesn't match the length, or a kept window that is the entered one: refused.
         keep[23] = 2;
@@ -332,5 +338,5 @@ int main(void) {
     // No heartbeat: Dock restores on the three-second lease timeout even if the client hangs.
     pthread_join(thread, NULL); close(fd);
     assert(CGAffineTransformEqualToTransform(transforms[4], original) && levels[4] == -10);
-    puts("PASS: fragmented frames, disconnect, invalid transform, two leases at once, handoff (leased, unleased, missing, keeping windows on show), shadows (eased both ways, refused, cut short), flagged frames (partial, keepalive, full, app in front), the canvas lifted and lowered, a window minimized while leased never ordered, lease expiry, unmanaged isolation");
+    puts("PASS: fragmented frames, windows put back at native size only after the commit, disconnect, invalid transform, two leases at once, handoff (leased, unleased, missing, keeping windows on show), shadows (eased both ways, refused, cut short), flagged frames (partial, keepalive, full, app in front), the canvas lifted and lowered, a window minimized while leased never ordered, lease expiry, unmanaged isolation");
 }

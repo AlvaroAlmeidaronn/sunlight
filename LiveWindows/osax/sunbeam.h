@@ -381,8 +381,15 @@ static void sunbeam_shadow_reset(uint32_t wid, int owner)
 /// minimized window brings it back on screen behind its app's back, and the canvas saw it come back
 /// half a second after every minimize. Its level and transform are kept by the Dock through the
 /// minimize and the restore, so it comes back as a window of its own level, at native size.
+///
+/// `settle` false leaves the transform (and shadow) for `sunbeam_settle` after the commit (sunlight-14):
+/// in a transaction that also changes levels the window server may take a window's level change after
+/// its order, which lands it at the front of the normal level, over the canvas, for a frame before the
+/// orders are put right. At the canvas's transform it shows there only where the canvas already drew
+/// it (a window off to the side, nowhere); at native size it flashed full-size over the canvas, under
+/// the window being entered, on quick ⌘Tab switches.
 static void sunbeam_restore(CFTypeRef transaction, struct sunbeam_saved *saved, uint32_t backdrop, uint32_t overlay,
-                            uint32_t *anchor, const uint32_t *skip, int skip_count)
+                            uint32_t *anchor, const uint32_t *skip, int skip_count, bool settle)
 {
     if (!sunbeam_owner_matches(saved)) return; // a closed window ID must not target a different app
     int cid = SLSMainConnectionID();
@@ -398,7 +405,18 @@ static void sunbeam_restore(CFTypeRef transaction, struct sunbeam_saved *saved, 
             if (sunbeam_order(transaction, cid, saved->wid, -1, *anchor) == kCGErrorSuccess) *anchor = saved->wid;
         }
     }
-    sunbeam_transform(transaction, cid, saved->wid, saved->transform);
+    if (settle) {
+        sunbeam_transform(transaction, cid, saved->wid, saved->transform);
+        sunbeam_shadow_reset(saved->wid, saved->owner);
+    }
+}
+
+/// The rest of `sunbeam_restore` for a window put back without its transform: directly, once its level
+/// and place are final, so the jump to native size happens under the backdrop.
+static void sunbeam_settle(struct sunbeam_saved *saved)
+{
+    if (!sunbeam_owner_matches(saved)) return;
+    sunbeam_transform(NULL, SLSMainConnectionID(), saved->wid, saved->transform);
     sunbeam_shadow_reset(saved->wid, saved->owner);
 }
 
@@ -483,15 +501,16 @@ static void sunbeam_release_all(struct sunbeam_saved *saved, int count, uint32_t
 {
     int cid = SLSMainConnectionID();
     bool canvas = backdrop && overlay && backdrop != overlay;
-    bool changed = false;
+    bool changed = false, transacted = false;
     for (int attempt = 0; attempt < 2; ++attempt) {
         CFTypeRef transaction = attempt == 0 ? sunbeam_transaction_begin(cid) : NULL;
         uint32_t anchor = backdrop;
         if (transaction && canvas) sunbeam_canvas_down(transaction, cid, backdrop, overlay, &changed);
         if (canvas) sunbeam_order(transaction, cid, backdrop, -1, overlay);
-        for (int i = count - 1; i >= 0; --i) sunbeam_restore(transaction, &saved[i], backdrop, overlay, &anchor, NULL, 0);
+        for (int i = count - 1; i >= 0; --i) sunbeam_restore(transaction, &saved[i], backdrop, overlay, &anchor, NULL, 0, !transaction);
         if (!transaction && canvas) sunbeam_canvas_down(NULL, cid, backdrop, overlay, &changed);
         if (canvas) sunbeam_canvas_tuck(transaction, cid, backdrop, overlay, above_pid, saved, count);
+        transacted = transaction != NULL;
         if (sunbeam_transaction_end(transaction)) break;
     }
     // A transaction's level changes and its orders should land together, in order. Should the window
@@ -501,9 +520,11 @@ static void sunbeam_release_all(struct sunbeam_saved *saved, int count, uint32_t
     if (changed && canvas) {
         uint32_t anchor = backdrop;
         sunbeam_order(NULL, cid, backdrop, -1, overlay);
-        for (int i = count - 1; i >= 0; --i) sunbeam_restore(NULL, &saved[i], backdrop, overlay, &anchor, NULL, 0);
+        for (int i = count - 1; i >= 0; --i) sunbeam_restore(NULL, &saved[i], backdrop, overlay, &anchor, NULL, 0, false);
         sunbeam_canvas_tuck(NULL, cid, backdrop, overlay, above_pid, saved, count);
     }
+    // Back at native size only now, where they are out of sight (see `sunbeam_restore`).
+    if (transacted) for (int i = count - 1; i >= 0; --i) sunbeam_settle(&saved[i]);
 }
 
 // MARK: Frames
@@ -631,7 +652,7 @@ static bool sunbeam_frame(char *bytes, int length, struct sunbeam_saved *saved, 
         bool keep = false;
         for (int j = 0; j < count; ++j) if (records[j].wid == saved[i].wid) keep = true;
         if (!keep) {
-            sunbeam_restore(NULL, &saved[i], backdrop, overlay, &anchor, NULL, 0);
+            sunbeam_restore(NULL, &saved[i], backdrop, overlay, &anchor, NULL, 0, true);
             memmove(&saved[i], &saved[i + 1], (*saved_count - i - 1) * sizeof(*saved));
             --*saved_count;
         }
@@ -780,7 +801,7 @@ static void sunbeam_handoff_apply(CFTypeRef transaction, uint32_t wid, int wid_l
         for (int i = count - 1; i >= 0; --i) {
             bool on_show = i == entered;
             for (int k = 0; k < kept_count; ++k) if (kept[k].index == i) on_show = true;
-            if (!on_show) sunbeam_restore(NULL, &saved[i], backdrop, overlay, &anchor, skip, kept_count + 1);
+            if (!on_show) sunbeam_restore(NULL, &saved[i], backdrop, overlay, &anchor, skip, kept_count + 1, true);
         }
         sunbeam_transform(NULL, cid, wid, settled);
         for (int k = 0; k < kept_count; ++k) sunbeam_transform(NULL, cid, saved[kept[k].index].wid, kept[k].settled);
@@ -803,7 +824,7 @@ static void sunbeam_handoff_apply(CFTypeRef transaction, uint32_t wid, int wid_l
         for (int i = count - 1; i >= 0; --i) {
             bool on_show = i == entered;
             for (int k = 0; k < kept_count; ++k) if (kept[k].index == i) on_show = true;
-            if (!on_show) sunbeam_restore(transaction, &saved[i], backdrop, overlay, &anchor, skip, kept_count + 1);
+            if (!on_show) sunbeam_restore(transaction, &saved[i], backdrop, overlay, &anchor, skip, kept_count + 1, false);
         }
     }
 }
@@ -860,10 +881,11 @@ static bool sunbeam_handoff(uint32_t wid, CGPoint point, uint32_t overlay, uint3
     uint32_t ov = overlay ? overlay : state->overlay;
     uint32_t bd = backdrop ? backdrop : state->backdrop;
     uint32_t anchor = bd;
-    bool changed = false;
+    bool changed = false, transacted = false;
     for (int attempt = 0; attempt < 2; ++attempt) {
         CFTypeRef transaction = attempt == 0 ? sunbeam_transaction_begin(cid) : NULL;
         sunbeam_handoff_apply(transaction, wid, wid_level, settled, overlay, ov, bd, saved, count, entered, kept, kept_count, anchor, &changed);
+        transacted = transaction != NULL;
         if (sunbeam_transaction_end(transaction)) break;
     }
     // Levels changed in a transaction: the orders once more, directly, in case the window server took
@@ -879,7 +901,15 @@ static bool sunbeam_handoff(uint32_t wid, CGPoint point, uint32_t overlay, uint3
         for (int i = count - 1; i >= 0; --i) {
             bool on_show = i == entered;
             for (int k = 0; k < kept_count; ++k) if (kept[k].index == i) on_show = true;
-            if (!on_show) sunbeam_restore(NULL, &saved[i], bd, ov, &redo_anchor, skip, kept_count + 1);
+            if (!on_show) sunbeam_restore(NULL, &saved[i], bd, ov, &redo_anchor, skip, kept_count + 1, false);
+        }
+    }
+    // The windows put back go to native size only now, under the backdrop (see `sunbeam_restore`).
+    if (transacted) {
+        for (int i = count - 1; i >= 0; --i) {
+            bool on_show = i == entered;
+            for (int k = 0; k < kept_count; ++k) if (kept[k].index == i) on_show = true;
+            if (!on_show) sunbeam_settle(&saved[i]);
         }
     }
     return true;
