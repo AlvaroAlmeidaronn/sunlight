@@ -12,7 +12,7 @@ or an older macOS, gets the preview only; the wizard says so on its first page.
 ## 1. Install the app
 
 Open `Sunlight-<version>.dmg` and drag Sunlight to Applications. With Homebrew, run
-`brew install spacefarm-digital/tap/sunlight` instead. Release builds are notarized, so they open without
+`brew install --cask spacefarm-digital/tap/sunlight` instead. Release builds are notarized, so they open without
 a Gatekeeper warning. Updates come through **Check for Updates…** (the menu bar icon › More, or Settings › General). Opened from the disk image
 or from Downloads instead, Sunlight offers to move itself to Applications first: its background helper
 and login item register where the app lives, so a copy anywhere else stops working once it's moved or

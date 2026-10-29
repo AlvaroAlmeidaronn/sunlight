@@ -116,7 +116,7 @@ flip anything.
 **Or with Homebrew:**
 
 ```sh
-brew install spacefarm-digital/tap/sunlight
+brew install --cask spacefarm-digital/tap/sunlight
 ```
 
 The first launch opens **Set Up Sunlight**, which grants the permissions and lands you on the canvas in
