@@ -6,15 +6,6 @@
   Sunlight loads the new add-on by itself the first time it starts after the update, which restarts the
   Dock once. With live windows allowed in Login Items that needs nothing from you; otherwise Sunlight asks
   for your administrator password once.
-- A canvas on every display, behind Settings › General › Experimental › Multiple displays (off by
-  default). Each window is on the canvas of the display it's on, and goes to another
-  display's canvas when moved there, from inside it or with ⌃⌥⇧ → ← (Window › Move to Next Display, or its
-  right-click menu). ⌘Tab reaches the windows of every display. While you work in a window on one display,
-  the others keep their canvas up. Displays plugged in or out are picked up as they come and go.
-- Live windows on every display, with the Dock add-on sunlight-13 (one lease per display's canvas).
-- Coming to rest almost exactly on a full screen window (a pan, pinch or minimap jump that lands near 1:1
-  with its edges nearly lined up) nudges the canvas onto it on a quick spring and enters it. Settings ›
-  Canvas › Snap to full screen windows turns it off.
 
 ## 0.1
 
@@ -29,6 +20,9 @@ The first public release.
 - Desktop widgets and Finder's desktop files sit on the canvas, with Show Desktop (F11 or the four-finger
   spread), and you can drag files into windows.
 - Hidden and minimized windows keep their place, shown as dashed outlines in the minimap.
+- Coming to rest almost exactly on a full screen window (a pan, pinch or minimap jump that lands near 1:1
+  with its edges nearly lined up) nudges the canvas onto it on a quick spring and enters it. Settings ›
+  Canvas › Snap to full screen windows turns it off.
 - Windows snap to alignment guides and a grid as you drag, can be resized from their edges, and can push
   each other aside if you want (Settings › Windows).
 - Move & Resize: ⌃⌥ shortcuts for halves, quarters, thirds, two-thirds, full screen and centre.
@@ -38,12 +32,18 @@ The first public release.
 - Takeover mode: hides the Dock and makes ⌘Tab, Mission Control and Show Desktop work on the canvas, and
   puts every setting it changed back when you quit.
 - Experimental, off by default (Settings › General › Experimental): Arrange and Tidy, and strip mode.
+- A canvas on every display, behind Settings › General › Experimental › Multiple displays (off by
+  default). Each window is on the canvas of the display it's on, and goes to another
+  display's canvas when moved there, from inside it or with ⌃⌥⇧ → ← (Window › Move to Next Display, or its
+  right-click menu). ⌘Tab reaches the windows of every display. While you work in a window on one display,
+  the others keep their canvas up. Displays plugged in or out are picked up as they come and go.
 
 **Live windows**
 - The real windows themselves, scaled on the canvas by a small add-on in the Dock. They need part of
   System Integrity Protection turned off. Until then, preview mode shows windows as live pictures.
 - Set Up Sunlight, a step-by-step wizard covering permissions, the Recovery restart (with a QR code for
   your phone) and the background helper, so nothing asks for a password afterwards.
+- Live windows on every display, with the Dock add-on sunlight-13 (one lease per display's canvas).
 - Diagnose… copies a plain-text report for bug reports. Uninstall Sunlight… walks the whole setup back.
 
 **Getting it**
