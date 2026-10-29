@@ -6,6 +6,7 @@
   Sunlight loads the new add-on by itself the first time it starts after the update, which restarts the
   Dock once. With live windows allowed in Login Items that needs nothing from you; otherwise Sunlight asks
   for your administrator password once.
+- Quick ⌘Tab taps from a window now fly the windows into place like a held ⌘ does, instead of jumping.
 
 ## 0.1
 

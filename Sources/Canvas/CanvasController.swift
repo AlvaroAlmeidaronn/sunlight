@@ -3730,6 +3730,11 @@ final class CanvasController {
     /// straight zoom-in a click or ⏎ gets.
     func handoff(to p: WindowProxy, placement: Placement = .centered, spatial: Bool = false) {
         guard !handingOff, p.kind == .window else { return }
+        // Straight after the canvas came back (a quick ⌘Tab tap, ⌘ up before the canvas was), its first
+        // listing may not have landed, and none lands during a handoff: the live windows were never
+        // presented, so the flight played with nothing on screen following it and the window jumped
+        // into place at the seam. One now, before the handoff starts, so the flight carries them.
+        if renderer == .realWindows, !realWindowListReady { listNow() }
         handingOff = true
         endShowDesktop(flyBack: false)
         handoffTarget = p   // before the camera moves: the pass must not restart its stream mid-flight
