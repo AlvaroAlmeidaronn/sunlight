@@ -8,6 +8,9 @@
   right-click menu). ⌘Tab reaches the windows of every display. While you work in a window on one display,
   the others keep their canvas up. Displays plugged in or out are picked up as they come and go.
 - Live windows on every display, with the Dock add-on sunlight-13 (one lease per display's canvas).
+- Coming to rest almost exactly on a full screen window (a pan, pinch or minimap jump that lands near 1:1
+  with its edges nearly lined up) nudges the canvas onto it on a quick spring and enters it. Settings ›
+  Canvas › Snap to full screen windows turns it off.
 
 ## 0.1
 

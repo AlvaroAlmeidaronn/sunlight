@@ -73,6 +73,7 @@ enum Settings {
     private static let panInertiaKey = "CanvasPanInertia"
     private static let seeAllGestureKey = "CanvasSeeAllGesture"
     private static let zoomInertiaKey = "CanvasZoomInertia"
+    private static let snapToWindowsKey = "CanvasSnapToWindows"
     private static let rememberCanvasKey = "CanvasRemember"
     private static let otherWindowsKey = "CanvasOtherWindowsOnRestore"
     private static let switcherEdgeKey = "SwitcherEdge"
@@ -281,6 +282,13 @@ enum Settings {
     static var zoomInertia: Bool {
         get { defaults.object(forKey: zoomInertiaKey) as? Bool ?? true }
         set { defaults.set(newValue, forKey: zoomInertiaKey) }
+    }
+
+    /// Coming to rest almost exactly on a screen-sized window (near 1:1, its edges nearly where they'd be
+    /// on the screen) nudges the canvas the rest of the way and enters it (see `WindowSnap`). On by default.
+    static var snapToWindows: Bool {
+        get { defaults.object(forKey: snapToWindowsKey) as? Bool ?? true }
+        set { defaults.set(newValue, forKey: snapToWindowsKey) }
     }
 
     /// The canvas is written down as it changes and put back at the next launch (see `LayoutStore`).
@@ -1144,9 +1152,13 @@ private struct CanvasPane: View {
                     RowLabel(title: "Inertia when zooming",
                              subtitle: "A pinch tails off for a moment after the fingers lift.")
                 }
+                Toggle(isOn: model.bind({ Settings.snapToWindows }, { Settings.snapToWindows = $0 })) {
+                    RowLabel(title: "Snap to full screen windows",
+                             subtitle: "Stopping almost exactly on a screen-sized window nudges the canvas onto it and enters it.")
+                }
             } header: {
                 SectionHeader(title: "Moving around",
-                              detail: "Both are off while Reduce Motion is on in System Settings › Accessibility.")
+                              detail: "Inertia is off while Reduce Motion is on in System Settings › Accessibility.")
             }
             Section {
                 if Settings.stripModeEnabled {

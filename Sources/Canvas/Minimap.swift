@@ -135,6 +135,7 @@ final class MinimapPanel: NSView {
     private func zoomToActual() {
         guard let c = canvas else { return }
         c.animateCamera(to: Camera(center: c.camera.center(viewSize: c.bounds.size), zoom: 1, viewSize: c.bounds.size))
+        c.noteUserMove()   // nearly on a full screen window, it snaps onto it
     }
 }
 
@@ -422,6 +423,7 @@ final class MinimapView: NSView {
         if p.moved {
             press = nil
             update()   // the frozen mapping goes; the map settles to the new world bounds
+            canvas.noteUserMove()   // let go nearly on a full screen window, it snaps onto it
             return
         }
         let target = p.mapping.toWorld(convert(event.locationInWindow, from: nil))
@@ -432,5 +434,6 @@ final class MinimapView: NSView {
         }
         // A click: look there, at the same zoom.
         canvas.animateCamera(to: Camera(center: target, zoom: canvas.camera.zoom, viewSize: canvas.bounds.size))
+        canvas.noteUserMove()
     }
 }

@@ -137,11 +137,13 @@ struct Spring {
 
     let x0: CGFloat
     let v0: CGFloat
+    var response: CGFloat = Spring.response
+    var damping: CGFloat = Spring.damping
 
     /// Offset and velocity `t` seconds in.
     func evaluate(at t: CGFloat) -> (x: CGFloat, v: CGFloat) {
-        let ω = 2 * CGFloat.pi / Spring.response
-        let ζ = Spring.damping
+        let ω = 2 * CGFloat.pi / response
+        let ζ = damping
         let ωd = ω * sqrt(1 - ζ * ζ)
         let decay = exp(-ζ * ω * t)
         let a = x0

@@ -329,6 +329,7 @@ final class CanvasController {
             scheduleCapturePass()
         }
         view.onViewportChanged = { [weak self] in self?.scheduleCapturePass() }
+        view.onSettle = { [weak self] in self?.snapToWindow() ?? false }
         view.onHover = { [weak self] p in if let p { self?.prefetchAX(p) } }
         view.onMoved = { [weak self] p in
             p.tile = nil   // placed by hand
@@ -3759,9 +3760,7 @@ final class CanvasController {
         var origin: CGPoint
         switch placement {
         case .centered:
-            origin = CGPoint(x: visible.midX - p.worldRect.width / 2, y: visible.midY - p.worldRect.height / 2)
-            if p.worldRect.width > visible.width { origin.x = visible.minX }
-            if p.worldRect.height > visible.height { origin.y = visible.minY }
+            origin = centredOrigin(of: p)
         case .inPlace(let point):
             // The point's x stays under the pointer and the title bar stays at the height it is on screen
             // now: zoomed out, the window grows down from its top edge; at 1:1 nothing moves.
@@ -3877,6 +3876,45 @@ final class CanvasController {
                 p.refresh(seam: true)
             }
         }
+    }
+
+    /// Where a window entered in the middle sits on screen (view coordinates): centred in the visible
+    /// area, or at its top-left when it's bigger than that.
+    private func centredOrigin(of p: WindowProxy) -> CGPoint {
+        let visible = visibleTopLeft
+        var origin = CGPoint(x: visible.midX - p.worldRect.width / 2, y: visible.midY - p.worldRect.height / 2)
+        if p.worldRect.width > visible.width { origin.x = visible.minX }
+        if p.worldRect.height > visible.height { origin.y = visible.minY }
+        return origin
+    }
+
+    /// The camera came to rest after the user moved it: nearly on a screen-sized window (near 1:1, its
+    /// edges nearly where they'd be on screen), it nudges the rest of the way on a quick spring and
+    /// enters it in the middle, as a double-click would (`WindowSnap`). True when it did.
+    private func snapToWindow() -> Bool {
+        guard Settings.snapToWindows, !handingOff, NSApp.isActive, activeProxy == nil, switcher == nil,
+              !isShowingDesktop, addingWidgets == nil, !isSetupShowing else { return false }
+        let windows = view.proxies.filter { $0.kind == .window && $0.away == nil && !$0.leaving }
+        let visible = visibleTopLeft
+        let spots = windows.map { p -> WindowSnap.Window in
+            // Where `handoff` puts it, centred: the same spot, so the handoff after the nudge doesn't move.
+            var origin = centredOrigin(of: p)
+            if let area = tiledArea(of: p) {
+                origin = CGPoint(x: visible.minX + p.worldRect.minX - area.minX, y: visible.minY + p.worldRect.minY - area.minY)
+            }
+            origin = CGPoint(x: (origin.x * scale).rounded() / scale, y: max(visible.minY, (origin.y * scale).rounded() / scale))
+            return WindowSnap.Window(rect: p.worldRect, spot: origin)
+        }
+        guard let hit = WindowSnap.target(camera: view.camera, viewSize: view.bounds.size, visible: visible, windows: spots) else {
+            return false
+        }
+        let p = windows[hit.index]
+        NSLog("Snap: onto \(p.appName) — \(p.title)")
+        view.snap(to: hit.camera) { [weak self, weak p] in
+            guard let self, let p, self.proxies[p.windowID] === p else { return }
+            self.handoff(to: p)
+        }
+        return true
     }
 
     /// The windows that stay on show as `p` is entered with live windows: every other window the view

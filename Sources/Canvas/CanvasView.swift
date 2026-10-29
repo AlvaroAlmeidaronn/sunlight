@@ -78,6 +78,9 @@ final class CanvasView: NSView {
     }
     /// The camera moved: any pan, zoom or animation frame.
     var onCameraChanged: (() -> Void)?
+    /// The camera came to rest after the user moved it (a pan, a pinch, a scroll, the minimap), the
+    /// fingers off and any coast run out: true when the controller took it from there (`WindowSnap`).
+    var onSettle: (() -> Bool)?
     /// A flight's spring each frame: 0 where the move began, 1 where it ends (a little past 1 at the
     /// overshoot), and exactly 1 once it settles, is dropped, or had no distance to go. The ⌘Tab strip
     /// moves on this, so it and the camera are one motion.
@@ -339,6 +342,14 @@ final class CanvasView: NSView {
     /// The pinch's log-zoom so far and its speed, for the tail when it ends.
     private var pinchLog: CGFloat = 0
     private var pinchVelocity = Motion.ScalarVelocity()
+    /// The user moved the camera and it hasn't come to rest since: `onSettle` is asked once it has. A move
+    /// of the app's own (a handoff, a fit, the switcher) clears it.
+    private var settleWhenStill = false
+    /// Fingers still on the trackpad: a scroll, a pinch or a four-finger drag that hasn't ended. A pause
+    /// with them down isn't a rest.
+    private var scrollHeld = false
+    private var pinchHeld = false
+    private var fourFingersHeld = false
     /// When the last input event arrived: the link stays up this long after, so a gesture doesn't
     /// stop and restart it between events.
     private var lastInput: CFTimeInterval = 0
@@ -748,6 +759,7 @@ final class CanvasView: NSView {
         beginInput()
         let k = bounds.width * CanvasView.trackpadPanGain
         let delta = CGVector(dx: travel.dx * k, dy: travel.dy * k)
+        fourFingersHeld = true
         panTravel.x += delta.dx
         panTravel.y += delta.dy
         panVelocity.add(panTravel, at: CACurrentMediaTime())
@@ -762,6 +774,7 @@ final class CanvasView: NSView {
         let v = panVelocity.release(at: now)
         panTravel = .zero
         panVelocity = Magnetism.Velocity()
+        fingersLifted()
         guard Settings.panInertia, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
         coast = Motion.PanCoast(velocity: v, at: now)
         if coast != nil { startDisplayLink() }
@@ -771,6 +784,31 @@ final class CanvasView: NSView {
     func trackpadPanCancelled() {
         panTravel = .zero
         panVelocity = Magnetism.Velocity()
+        fourFingersHeld = false
+    }
+
+    /// A gesture's fingers came off: the camera may be at rest already, with the link long stopped, so
+    /// one comes round to see (`settleIfStill`).
+    private func fingersLifted() {
+        fourFingersHeld = false
+        guard settleWhenStill else { return }
+        startDisplayLink()
+    }
+
+    /// The user moved the camera without input events of the view's own (the minimap): ask `onSettle`
+    /// once it's at rest.
+    func noteUserMove() {
+        settleWhenStill = true
+        startDisplayLink()
+    }
+
+    /// At rest after the user moved it, nothing held and nothing in hand: `onSettle` gets its one look.
+    private func settleIfStill(at now: CFTimeInterval) {
+        guard settleWhenStill, animation == nil, flight == nil, magnet == nil, pending.isEmpty, coast == nil,
+              zoomCoast == nil, now - lastInput > CanvasView.inputLinger, !scrollHeld, !pinchHeld,
+              !fourFingersHeld, !panning, dragging == nil, resizing == nil else { return }
+        settleWhenStill = false
+        _ = onSettle?()
     }
 
     /// An input event is about to change the camera: whatever motion was running stops, and the
@@ -778,6 +816,7 @@ final class CanvasView: NSView {
     /// and restarted between the events of one gesture.
     private func beginInput() {
         lastInput = CACurrentMediaTime()
+        settleWhenStill = true
         interruptMotion()
         startDisplayLink()
     }
@@ -833,6 +872,7 @@ final class CanvasView: NSView {
     func animateCamera(to target: Camera, duration: CFTimeInterval = CanvasView.cameraDuration,
                        moving: [(proxy: WindowProxy, to: CGPoint)] = [], completion: (() -> Void)? = nil) {
         interruptMotion()
+        settleWhenStill = false
         animation = CameraAnimation(from: camera, to: target, start: CACurrentMediaTime(), duration: duration,
                                     moves: moving.map { ($0.proxy, $0.proxy.worldRect.origin, $0.to) },
                                     completion: completion)
@@ -895,6 +935,7 @@ final class CanvasView: NSView {
         } else {
             interruptMotion()
         }
+        settleWhenStill = false
         let path = CameraPath(from: camera, to: target, viewSize: bounds.size)
         guard path.length > 1e-4 else {
             set(camera: target)
@@ -903,6 +944,23 @@ final class CanvasView: NSView {
             return
         }
         flight = Flight(path: path, spring: Spring(x0: -1, v0: speed / path.length),
+                        start: CACurrentMediaTime(), completion: completion)
+        startDisplayLink()
+        onViewportChanged?()
+    }
+
+    /// The last bit of the way onto a window the camera came to rest nearly on (`WindowSnap`): a short
+    /// flight on a quick, stiff spring that barely overshoots. Under Reduce Motion it's there at once.
+    func snap(to target: Camera, completion: @escaping () -> Void) {
+        interruptMotion()
+        settleWhenStill = false
+        let path = CameraPath(from: camera, to: target, viewSize: bounds.size)
+        guard path.length > 1e-4, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            set(camera: target)
+            completion()
+            return
+        }
+        flight = Flight(path: path, spring: Spring(x0: -1, v0: 0, response: WindowSnap.response, damping: WindowSnap.damping),
                         start: CACurrentMediaTime(), completion: completion)
         startDisplayLink()
         onViewportChanged?()
@@ -974,6 +1032,7 @@ final class CanvasView: NSView {
         tickCamera(at: now)
         tickEntrances(at: now)
         tickMagnet(at: now)
+        settleIfStill(at: now)   // may start a move of its own, which keeps the link
         lastTick = now
         perf.tick(apply: CACurrentMediaTime() - began, coalesced: coalesced, missed: missed)
         stopLinkIfIdle()   // after the completions: one may have started the next move
@@ -2125,7 +2184,10 @@ final class CanvasView: NSView {
             }
         }
         dragging = nil
-        panning = false
+        if panning {
+            panning = false
+            fingersLifted()
+        }
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -2155,6 +2217,11 @@ final class CanvasView: NSView {
         // The Mac's own momentum events come through here too, so a scroll pan coasts by itself; with
         // pan inertia off in Settings (or Reduce Motion on) they're dropped and the pan stops with the
         // fingers.
+        if event.phase == .began || event.phase == .changed { scrollHeld = true }
+        if event.phase == .ended || event.phase == .cancelled {
+            scrollHeld = false
+            fingersLifted()
+        }
         if event.momentumPhase != [],
            !Settings.panInertia || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion { return }
         beginInput()
@@ -2173,6 +2240,7 @@ final class CanvasView: NSView {
             pinchLog = 0
             pinchVelocity = Motion.ScalarVelocity()
         }
+        pinchHeld = !(event.phase == .ended || event.phase == .cancelled)
         let factor = max(0.01, 1 + event.magnification)
         pinchLog += log(factor)
         pinchVelocity.add(pinchLog, at: event.timestamp)
@@ -2184,6 +2252,8 @@ final class CanvasView: NSView {
         let v = pinchVelocity.release(at: event.timestamp)
         pinchLog = 0
         pinchVelocity = Motion.ScalarVelocity()
+        // Ended nearly on a full screen window: onto it and in, centred, rather than in place.
+        if onSettle?() == true { return }
         // "Zoom all the way in" is the handoff gesture, finishing the zoom where the fingers are.
         // A widget is already as real as it gets; the minimap is neither.
         if camera.zoom >= CanvasView.handoffZoom, isCovered?(screenPoint) != true {
